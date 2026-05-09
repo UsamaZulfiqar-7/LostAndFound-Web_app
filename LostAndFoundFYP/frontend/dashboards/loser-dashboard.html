@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Loser Dashboard | Lost & Found</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <link rel="icon" href="data:," />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #0a0a0a, #222);
+      color: #fff;
+      font-family: Poppins, sans-serif;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    h2, h3 { color: #ffd700; }
+
+    button {
+      background: #ffd700;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 25px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 3px;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .card {
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 18px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+    }
+
+    input, textarea {
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid #444;
+      color: white;
+      border-radius: 10px;
+    }
+
+    input[type="file"] {
+      background: #111;
+      border: 1px solid #444;
+      padding: 8px;
+      cursor: pointer;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #444;
+      text-align: left;
+    }
+
+    th { color: #ffd700; }
+
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    img.preview {
+      width: 80px;
+      border-radius: 8px;
+    }
+
+    .profile-img {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #ffd700;
+      display: block;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h2 id="dashboardTitle">Lost Item Owner Dashboard</h2>
+  <button type="button" onclick="logout()">Logout</button>
+</header>
+
+<!-- PROFILE SECTION -->
+<section class="card">
+  <h3>My Profile</h3>
+
+  <form id="profileForm" enctype="multipart/form-data">
+
+    <!-- ✅ FIX: IMAGE ADDED -->
+    <img id="profilePreview" class="profile-img" src="https://via.placeholder.com/120">
+
+    <input type="file" id="profileImageInput" accept="image/*" />
+
+    <!-- ✅ FIX: BUTTON TYPE -->
+    <button type="button" onclick="uploadProfileImage()">Update Profile Picture</button>
+
+  </form>
+</section>
+
+<!-- REPORT LOST ITEM -->
+<section class="card">
+  <h3>Report Lost Item</h3>
+
+  <input type="text" id="itemName" placeholder="Item name" />
+  <textarea id="itemDesc" placeholder="Item description"></textarea>
+
+  <!-- ✅ FIX: name added -->
+  <input type="hidden" id="itemLocation" name="location" />
+
+  <div id="map" style="height:300px;border-radius:10px;margin-top:10px;"></div>
+
+  <p id="locationText" style="color:#ffd700; margin-top:5px;">
+    Click on map to select location
+  </p>
+
+  <input type="file" id="itemImage" accept="image/*" />
+
+  <button id="submitBtn" onclick="submitLostItem()" disabled>
+    Submit Report
+  </button>
+
+  <p class="status" id="msg"></p>
+</section>
+
+<!-- MY LOST ITEMS -->
+<section class="card">
+  <h3>My Lost Items</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>QR Code</th>
+        <th>Chat</th>
+        <th>Return</th>
+      </tr>
+    </thead>
+    <tbody id="itemsBody"></tbody>
+  </table>
+
+  <p id="emptyMsg">No lost items reported yet.</p>
+</section>
+
+<!-- NOTIFICATIONS -->
+<section class="card">
+  <h3>🔔 Notifications</h3>
+  <ul id="notifications"></ul>
+</section>
+
+<!-- ✅ FIX: Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+const submitBtn = document.getElementById("submitBtn");
+const role = localStorage.getItem("role");
+const userId = localStorage.getItem("user_id");
+
+const itemName = document.getElementById("itemName");
+const itemDesc = document.getElementById("itemDesc");
+
+if (role !== "loser") {
+  window.location.replace("../auth/login.html");
+}
+
+// ✅ FIX: CLEAN VALIDATION (NO LOCATION)
+function validateLostForm() {
+  if (itemName.value.trim() && itemDesc.value.trim()) {
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = "1";
+  } else {
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = "0.5";
+  }
+}
+
+itemName.addEventListener("input", validateLostForm);
+itemDesc.addEventListener("input", validateLostForm);
+
+function logout() {
+  localStorage.clear();
+  window.location.replace("../auth/login.html");
+}
+
+// PROFILE LOAD
+async function loadUserProfile() {
+  const res = await fetch(`http://127.0.0.1:5000/user/${userId}`, {
+    headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+    }
+  });
+
+  const data = await res.json();
+
+  document.getElementById("dashboardTitle").innerText =
+    `Lost Item Owner Dashboard - ${data.name}`;
+
+  const img = document.getElementById("profilePreview");
+
+  if (data.profile_image) {
+    img.src = `http://127.0.0.1:5000/static/profile_pics/${data.profile_image}`;
+  }
+}
+
+// UPLOAD PROFILE
+async function uploadProfileImage() {
+  const fileInput = document.getElementById("profileImageInput");
+  const file = fileInput.files[0];
+
+  if (!file) {
+    alert("Please select an image");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const res = await fetch(`http://127.0.0.1:5000/upload-profile`, {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+    },
+    body: formData
+  });
+
+  const data = await res.json();
+  alert(data.msg);
+
+  loadUserProfile();
+}
+
+
+// SUBMIT ITEM
+async function submitLostItem() {
+  const msg = document.getElementById("msg");
+  msg.innerText = "";
+
+  try {
+    const imageFile = document.getElementById("itemImage").files[0];
+
+    const formData = new FormData();
+    formData.append("item_name", itemName.value.trim());
+    formData.append("description", itemDesc.value.trim());
+
+    // ✅ PRIORITY: locationName (human readable)
+    formData.append("location", window.locationName || "Unknown Location");
+
+// ✅ OPTIONAL: coordinates (future use)
+    formData.append("coordinates", window.locationCoords || "");
+
+
+    formData.append("user_id", userId);
+
+    if (imageFile) {
+      formData.append("image", imageFile);
+    }
+
+    const res = await fetch("http://127.0.0.1:5000/lost-item", {
+      method: "POST",
+      headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+      },
+      body: formData
+    });
+
+
+    const data = await res.json();
+
+    msg.style.color = "#7CFC00";
+    msg.innerHTML = `${data.msg}<br>
+      ${data.qr_code
+        ? `<a href="http://127.0.0.1:5000/static/${data.qr_code}" target="_blank">🔳 View QR</a>`
+        : ""}`;
+
+    itemName.value = "";
+    itemDesc.value = "";
+    document.getElementById("itemLocation").value = "";
+    document.getElementById("itemImage").value = "";
+
+    loadMyLostItems();
+
+  } catch {
+    msg.style.color = "red";
+    msg.innerText = "Server not responding";
+  }
+}
+
+// LOAD ITEMS (UNCHANGED)
+async function loadMyLostItems() {
+  const res = await fetch(`http://127.0.0.1:5000/my-lost-items`, {
+  headers: {
+    "Authorization": "Bearer " + localStorage.getItem("token")
+  }
+});
+
+  const items = await res.json();
+
+  const body = document.getElementById("itemsBody");
+  body.innerHTML = "";
+
+  if (!items.length) {
+    emptyMsg.style.display = "block";
+    return;
+  }
+
+  emptyMsg.style.display = "none";
+
+  items.forEach(item => {
+
+    let chatCol = "—";
+    let returnCol = "—";
+    let statusText = item.status;
+
+    if (item.status === "Returned") {
+      statusText = "Returned ✅";
+      returnCol = "Completed";
+    }
+    else if (item.chat_approved) {
+      statusText = "Chat Approved ✅";
+      chatCol = `<button onclick="openChat(${item.id})">Open Chat</button>`;
+      returnCol = `<button onclick="markReturned(${item.id})">Mark Returned</button>`;
+    }
+    else if (item.chat_requested) {
+      statusText = "Chat Requested ⏳";
+      chatCol = "Waiting admin approval";
+    }
+    else if (item.status === "Matched") {
+      chatCol = `<button onclick="requestChat(${item.id})">Request Chat</button>`;
+    }
+
+    body.innerHTML += `
+      <tr>
+        <td>${item.item_name}</td>
+        <td>${item.location}</td>
+        <td>${statusText}</td>
+        <td>
+          ${item.qr_code
+            ? `<a target="_blank" href="http://127.0.0.1:5000/static/${item.qr_code}">QR</a>`
+            : "—"}
+        </td>
+        <td>${chatCol}</td>
+        <td>${returnCol}</td>
+      </tr>`;
+  });
+}
+
+// ================= MAP =================
+
+// 🌍 MAP INIT
+var map = L.map('map').setView([33.6844, 73.0479], 13); // Islamabad default
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+
+var marker;
+
+// 📍 CLICK EVENT
+map.on('click', async function(e) {
+    const { lat, lng } = e.latlng;
+
+    // remove old marker
+    if (marker) map.removeLayer(marker);
+
+    marker = L.marker([lat, lng]).addTo(map);
+
+    try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+        );
+
+        const data = await res.json();
+
+        // ✅ STORE VALUES
+        window.locationCoords = `${lat},${lng}`;
+        window.locationName = data.display_name;
+
+        // ✅ SHOW TO USER
+        document.getElementById("itemLocation").value = data.display_name;
+        document.getElementById("locationText").innerText =
+          "📍 " + data.display_name;
+
+    } catch (error) {
+        console.error("Location fetch error:", error);
+
+        // fallback
+        window.locationCoords = `${lat},${lng}`;
+        window.locationName = "Unknown Location";
+
+        document.getElementById("itemLocation").value = "Unknown Location";
+        document.getElementById("locationText").innerText =
+          "📍 Location selected (name not found)";
+    }
+});
+
+
+async function loadNotifications() {
+  const res = await fetch(`http://127.0.0.1:5000/notifications`, {
+  headers: {
+    "Authorization": "Bearer " + localStorage.getItem("token")
+  }
+});
+
+  const notes = await res.json();
+
+  const ul = document.getElementById("notifications");
+  ul.innerHTML = "";
+
+  if (notes.length === 0) {
+    ul.innerHTML = "<li>No notifications</li>";
+    return;
+  }
+
+  notes.forEach(n => {
+    ul.innerHTML += `<li>${n.message}</li>`;
+  });
+}
+async function requestChat(itemId) {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/request-chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + localStorage.getItem("token")
+      },
+      body: JSON.stringify({
+        lost_item_id: itemId
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.msg || "Error requesting chat");
+      return;
+    }
+
+    alert(data.msg);
+
+    // reload items
+    loadMyLostItems();
+
+  } catch (error) {
+    console.error(error);
+    alert("Error requesting chat");
+  }
+}
+
+function openChat(id) {
+  window.location.href = `chat.html?lost_item_id=${id}`;
+}
+// ================= MARK RETURNED =================
+
+async function markReturned(itemId) {
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:5000/mark_returned/${itemId}`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + localStorage.getItem("token")
+        }
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.msg || "Error marking item as returned");
+      return;
+    }
+
+    alert(data.msg);
+
+    // reload items
+    loadMyLostItems();
+
+  } catch (error) {
+    console.error(error);
+    alert("Server error");
+  }
+}
+
+// ================= INIT =================
+loadUserProfile();
+loadMyLostItems();
+loadNotifications();
+</script>
+
+</body>
+</html>

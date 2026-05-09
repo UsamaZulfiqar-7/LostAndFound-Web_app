@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard | Lost & Found</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #0a0a0a, #222);
+      color: #fff;
+      font-family: Poppins, sans-serif;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+    }
+
+    h2, h3 {
+      color: #ffd700;
+    }
+
+    button {
+      background: #ffd700;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 3px 0;
+    }
+
+    select {
+      background: #111;
+      color: white;
+      border: 1px solid #444;
+      padding: 6px;
+      border-radius: 8px;
+    }
+
+    .card {
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 18px;
+      margin-bottom: 30px;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #444;
+      font-size: 14px;
+      text-align: left;
+    }
+
+    th {
+      color: #ffd700;
+    }
+
+    .matched {
+      color: #7CFC00;
+      font-weight: bold;
+    }
+
+    .pending {
+      color: orange;
+      font-weight: bold;
+    }
+
+    img {
+      width: 60px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #555;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h2>Admin Dashboard</h2>
+  <button onclick="logout()">Logout</button>
+</header>
+
+<div class="card">
+  <h3>📊 System Statistics</h3>
+
+  <div style="display:flex; gap:20px; flex-wrap:wrap">
+
+    <div style="background:#111;padding:18px;border-radius:12px;min-width:160px;text-align:center;">
+      <b style="color:#ffd700;">Total Lost Items</b>
+      <h2 id="statLost" style="font-size:34px;margin-top:8px;">0</h2>
+    </div>
+
+    <div style="background:#111;padding:18px;border-radius:12px;min-width:160px;text-align:center;">
+      <b style="color:#ffd700;">Total Found Items</b>
+      <h2 id="statFound" style="font-size:34px;margin-top:8px;">0</h2>
+    </div>
+
+    <div style="background:#111;padding:18px;border-radius:12px;min-width:160px;text-align:center;">
+      <b style="color:#ffd700;">Matched Items</b>
+      <h2 id="statMatched" style="font-size:34px;margin-top:8px;">0</h2>
+    </div>
+
+    <div style="background:#111;padding:18px;border-radius:12px;min-width:160px;text-align:center;">
+      <b style="color:#ffd700;">Returned Items</b>
+      <h2 id="statReturned" style="font-size:34px;margin-top:8px;">0</h2>
+    </div>
+
+  </div>
+</div>
+
+<div class="card">
+  <h3>🏆 Top Finders Leaderboard</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Name</th>
+        <th>Points</th>
+        <th>Badge</th>
+      </tr>
+    </thead>
+
+    <tbody id="leaderboardTable"></tbody>
+  </table>
+</div>
+
+
+
+<div class="card">
+  <h3>Reported Lost Items</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Image</th>
+        <th>Item</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>Owner</th>
+      </tr>
+    </thead>
+    <tbody id="lostItemsTable"></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Reported Found Items</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Image</th>
+        <th>Item</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>AI Match</th>
+        <th>Manual Match</th>
+      </tr>
+    </thead>
+    <tbody id="foundItemsTable"></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>✅ Returned Items</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Lost ID</th>
+        <th>Image</th>
+        <th>Item</th>
+        <th>Location</th>
+        <th>Owner</th>
+        <th>Finder</th>
+      </tr>
+    </thead>
+    <tbody id="returnedItemsTable"></tbody>
+  </table>
+</div>
+
+
+<section class="card">
+  <h3>💬 Chat Requests</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Owner</th>
+        <th>Finder</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="chatRequestsBody"></tbody>
+  </table>
+  <p id="noChatReq">No pending chat requests</p>
+</section>
+
+<script>
+const role = localStorage.getItem("role");
+const token = localStorage.getItem("token");
+
+if (!role || role !== "admin" || !token) {
+  window.location.replace("../auth/login.html");
+}
+
+let lostItemsCache = [];
+
+function logout() {
+  localStorage.clear();
+  window.location.replace("../auth/login.html");
+}
+function animateCounter(elementId, target) {
+
+  target = Number(target) || 0; // ✅ FIX NaN
+
+  let current = 0;
+  const increment = Math.ceil(target / 70) || 1;
+
+  const timer = setInterval(() => {
+
+    current += increment;
+
+    if (current >= target) {
+      current = target;
+      clearInterval(timer);
+    }
+
+    document.getElementById(elementId).innerText = current;
+
+  }, 50);
+}
+
+
+async function loadStats() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/admin/stats", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    });
+
+    const data = await res.json();
+
+    animateCounter("statLost", data.total_lost);
+    animateCounter("statFound", data.total_found);
+    animateCounter("statMatched", data.matched_items);
+    animateCounter("statReturned", data.returned_items);
+
+  } catch (err) {
+    console.error("Stats Error:", err);
+  }
+}
+async function loadLeaderboard() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/admin/top-finders", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    });
+
+    let users = await res.json();
+
+    const table = document.getElementById("leaderboardTable");
+    table.innerHTML = "";
+
+    if (!users.length) {
+      table.innerHTML = `<tr><td colspan="4">No data</td></tr>`;
+      return;
+    }
+
+    users.slice(0, 3).forEach((u, index) => {
+
+      let medal = index + 1;
+      if (index === 0) medal = "🥇";
+      else if (index === 1) medal = "🥈";
+      else if (index === 2) medal = "🥉";
+
+      table.innerHTML += `
+        <tr>
+          <td>${medal}</td>
+          <td>${u.name || "N/A"}</td>
+          <td>${u.points || 0}</td>
+          <td>${u.badge || "—"}</td>
+        </tr>
+      `;
+    });
+
+  } catch (err) {
+    console.error("Leaderboard Error:", err);
+  }
+}
+
+async function loadLostItems() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/lost-items", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    });
+
+    lostItemsCache = await res.json();
+
+    const table = document.getElementById("lostItemsTable");
+    table.innerHTML = "";
+
+    lostItemsCache.forEach(item => {
+
+      const owner =
+        item.owner_name ||
+        item.owner_id ||
+        item.user_id ||
+        "Unknown";
+
+      table.innerHTML += `
+        <tr>
+          <td>${item.id}</td>
+
+          <td>
+            ${item.image
+              ? `<img src="http://127.0.0.1:5000/static/uploads/${item.image}">`
+              : "—"}
+          </td>
+
+          <td>${item.item_name}</td>
+          <td>${item.location}</td>
+
+          <td class="${item.status === "Matched" ? "matched" : "pending"}">
+            ${item.status}
+          </td>
+
+          <td>${owner}</td>
+        </tr>
+      `;
+    });
+
+  } catch (err) {
+    console.error("Lost Items Error:", err);
+  }
+}
+
+async function loadFoundItems() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/found-items", {
+      headers: {
+        "Authorization": "Bearer " + localStorage.getItem("token")
+      }
+    });
+
+    const items = await res.json();
+
+    const table = document.getElementById("foundItemsTable");
+    table.innerHTML = "";
+
+    if (!items.length) {
+      table.innerHTML = `<tr><td colspan="7">No found items</td></tr>`;
+      return;
+    }
+
+    items.forEach(item => {
+
+      const options = lostItemsCache
+        .filter(l => l.status !== "Matched")
+        .map(l => `<option value="${l.id}">${l.item_name}</option>`)
+        .join("");
+
+      table.innerHTML += `
+        <tr>
+          <td>${item.id}</td>
+
+          <td>
+            ${item.image
+              ? `<img src="http://127.0.0.1:5000/static/uploads/${item.image}">`
+              : "—"}
+          </td>
+
+          <td>${item.item_name || "N/A"}</td>
+
+          <td>${item.location || "N/A"}</td>
+
+          <td class="${item.is_matched ? "matched" : "pending"}">
+            ${item.is_matched ? "Matched ✅" : "Pending ⏳"}
+          </td>
+
+          <td>
+            ${item.is_matched
+              ? "—"
+              : `<button onclick="checkSimilarity(${item.id})">
+                  Check Similarity
+                </button>`}
+          </td>
+
+          <td>
+            ${item.is_matched
+              ? "—"
+              : `
+                <select id="lost-${item.id}">
+                  <option value="">Select</option>
+                  ${options}
+                </select>
+                <button onclick="matchItem(${item.id})">Match</button>
+              `}
+          </td>
+        </tr>
+      `;
+    });
+
+  } catch (err) {
+    console.error("Found Items Error:", err);
+  }
+}
+async function checkSimilarity(foundId) {
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:5000/admin/check-similarity/${foundId}`,
+      {
+        headers: {
+          "Authorization": "Bearer " + localStorage.getItem("token")
+        }
+      }
+    );
+
+    const data = await res.json();
+
+    const similarity = (Number(data.similarity) * 100 || 0).toFixed(2);
+
+    if (data.match_found) {
+      alert(
+        `✅ Strong Match Found!\n\n` +
+        `Found ID: ${data.found_item_id}\n` +
+        `Lost ID: ${data.lost_item_id}\n` +
+        `Name: ${data.lost_item_name}\n` +
+        `Similarity: ${similarity}%`
+      );
+    } 
+    else if (data.lost_item_id) {
+      alert(
+        `⚠️ Best Candidate Found\n\n` +
+        `Found ID: ${data.found_item_id}\n` +
+        `Lost ID: ${data.lost_item_id}\n` +
+        `Name: ${data.lost_item_name}\n` +
+        `Similarity: ${similarity}%`
+      );
+    } 
+    else {
+      alert(`❌ No match found\nSimilarity: ${similarity}%`);
+    }
+
+  } catch (err) {
+    console.error("Similarity Error:", err);
+    alert("Error checking similarity");
+  }
+}
+
+async function matchItem(foundId) {
+  try {
+    const lostId = document.getElementById(`lost-${foundId}`).value;
+
+    if (!lostId) {
+      alert("Select lost item first");
+      return;
+    }
+
+    const res = await fetch("http://127.0.0.1:5000/match-item", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + localStorage.getItem("token")
+      },
+      body: JSON.stringify({
+        lost_item_id: lostId,
+        found_item_id: foundId
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.msg || "Match failed");
+      return;
+    }
+
+    alert("✅ Item matched successfully");
+
+    // reload everything
+    await loadLostItems();
+    await loadFoundItems();
+    await loadChatRequests();
+
+  } catch (err) {
+    console.error("Match Error:", err);
+    alert("Server error while matching");
+  }
+}
+
+
+async function loadChatRequests() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/admin/chat-requests", {
+      headers: {
+        "Authorization": "Bearer " + localStorage.getItem("token")
+      }
+    });
+
+    const requests = await res.json();
+
+    const table = document.getElementById("chatRequestsBody");
+    const emptyMsg = document.getElementById("noChatReq");
+
+    table.innerHTML = "";
+
+    if (!requests.length) {
+      emptyMsg.style.display = "block";
+      return;
+    }
+
+    emptyMsg.style.display = "none";
+
+    requests.forEach(r => {
+      table.innerHTML += `
+        <tr>
+          <td>${r.item_name || "N/A"}</td>
+          <td>${r.owner_name || "Unknown"}</td>
+          <td>${r.finder_name || "Unknown"}</td>
+
+          <td>
+            ${
+              r.chat_approved
+                ? `<span style="
+                      background:#333;
+                      color:#7CFC00;
+                      padding:6px 14px;
+                      border-radius:20px;
+                      font-weight:bold;
+                   ">
+                     Approved ✅
+                   </span>`
+                : `<button onclick="approveChat(${r.lost_item_id})">
+                     Approve
+                   </button>`
+            }
+          </td>
+        </tr>
+      `;
+    });
+
+  } catch (err) {
+    console.error("Chat Requests Error:", err);
+  }
+}
+
+async function approveChat(lostItemId) {
+  try {
+    const res = await fetch(
+      "http://127.0.0.1:5000/admin/approve-chat",
+      {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + localStorage.getItem("token")
+        },
+        body: JSON.stringify({ lost_item_id: lostItemId })
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.msg || "Approval failed");
+      return;
+    }
+
+    alert("✅ Chat approved");
+
+    loadChatRequests();
+
+  } catch (err) {
+    console.error("Approve Chat Error:", err);
+    alert("Server error");
+  }
+}
+
+
+async function loadReturnedItems() {
+  try {
+    const res = await fetch("http://127.0.0.1:5000/admin/returned-items", {
+      headers: {
+        "Authorization": "Bearer " + localStorage.getItem("token")
+      }
+    });
+
+    const items = await res.json();
+
+    const table = document.getElementById("returnedItemsTable");
+    table.innerHTML = "";
+
+    if (!items.length) {
+      table.innerHTML = `<tr><td colspan="6">No returned items</td></tr>`;
+      return;
+    }
+
+    items.forEach(item => {
+      table.innerHTML += `
+        <tr>
+          <td>${item.lost_id}</td>
+
+          <td>
+            ${item.image
+              ? `<img src="http://127.0.0.1:5000/static/uploads/${item.image}">`
+              : "—"}
+          </td>
+
+          <td>${item.item_name || "N/A"}</td>
+          <td>${item.location || "N/A"}</td>
+          <td>${item.owner_name || "Unknown"}</td>
+          <td>${item.finder_name || "—"}</td>
+        </tr>
+      `;
+    });
+
+  } catch (err) {
+    console.error("Returned Items Error:", err);
+  }
+}
+async function initAdminDashboard() {
+  await Promise.all([
+    loadLostItems(),
+    loadFoundItems(),
+    loadChatRequests(),
+    loadReturnedItems(),
+    loadStats(),
+    loadLeaderboard()
+  ]);
+}
+
+initAdminDashboard();
+
+</script>
+
+
+</body>
+</html>

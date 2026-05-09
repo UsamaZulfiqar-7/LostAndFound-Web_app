@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lost & Found | Login / Signup</title>
+  <link rel="stylesheet" href="login.css"/>
+</head>
+<body>
+
+<div class="flip-container" id="flipBox">
+
+  <!-- LOGIN -->
+  <div class="flipper front-side">
+    <div class="left-box">
+      <form class="form-box" id="loginForm">
+        <h2>Login</h2>
+
+        <div class="input-box">
+          <input type="email" id="loginEmail" required />
+          <label>Email</label>
+        </div>
+
+        <div class="input-box">
+          <input type="password" id="loginPassword" required />
+          <label>Password</label>
+        </div>
+        <button class="btn" type="submit">Login</button>
+
+<div style="text-align:center; margin:15px 0; color:#aaa;">
+  -------- OR --------
+</div>
+
+<div id="g_id_onload"
+    data-client_id="286841684345-d8v35mfp128cou6v0nu37eurd6b6uae1.apps.googleusercontent.com"
+    data-callback="handleGoogleLogin">
+</div>
+
+<div class="g_id_signin" data-type="standard"></div>
+
+<p class="hint-text">Don’t have an account?</p>
+
+        <button type="button" id="openSignup" class="btn small-btn">
+          Sign Up
+        </button>
+      </form>
+    </div>
+
+    <div class="right-box">
+      <div class="text-box">
+        <h2>WELCOME BACK!</h2>
+        <p>Access your lost & found dashboard.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIGNUP -->
+  <div class="flipper back-side">
+    <div class="left-box">
+      <div class="text-box">
+        <h2>NEW HERE?</h2>
+        <p>Create an account to help return lost items.</p>
+        <button id="openLogin" class="btn small-btn">Login</button>
+      </div>
+    </div>
+
+    <div class="right-box">
+      <form class="form-box" id="signupForm">
+        <h2>Sign Up</h2>
+
+        <div class="input-box">
+          <input type="text" id="signupName" required />
+          <label>Full Name</label>
+        </div>
+
+        <div class="input-box">
+          <input type="email" id="signupEmail" required />
+          <label>Email</label>
+        </div>
+
+        <div class="input-box">
+          <input type="password" id="signupPassword" required />
+          <label>Password</label>
+        </div>
+
+        <div class="input-box">
+          <select id="signupRole" required>
+            <option value="">Select Role</option>
+            <option value="finder">Finder</option>
+            <option value="loser">Loser</option>
+          </select>
+        </div>
+
+        <button class="btn" type="submit">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script src="login.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+Flask
+Flask-SQLAlchemy
+PyMySQL
+Flask-JWT-Extended
+Flask-SocketIO
+eventlet
+tensorflow
+scikit-learn
+opencv-python
+numpy
+pandas

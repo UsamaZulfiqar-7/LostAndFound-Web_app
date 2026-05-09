@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Finder Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- ✅ Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+  <style>
+    body {
+      background: linear-gradient(135deg, #000, #222);
+      color: white;
+      font-family: Poppins, sans-serif;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    h2, h3 {
+      color: #ffd700;
+    }
+
+    .card {
+      background: #1c1c1c;
+      padding: 20px;
+      border-radius: 15px;
+      margin-bottom: 25px;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #111;
+      color: white;
+      outline: none;
+    }
+
+    button {
+      background: #ffd700;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 25px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #444;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      color: #ffd700;
+    }
+
+    .pending {
+      color: orange;
+      font-weight: bold;
+    }
+
+    .matched {
+      color: #7CFC00;
+      font-weight: bold;
+    }
+
+    .status {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h2 id="dashboardTitle">Finder Dashboard</h2>
+  <button onclick="logout()">Logout</button>
+</header>
+
+<div class="card">
+  <h3>👤 My Profile</h3>
+
+  <img id="profileImage" src="" style="width:120px;height:120px;border-radius:50%;border:2px solid #ffd700">
+
+  <p><strong>Name:</strong> <span id="finderName"></span></p>
+  <p><strong>Total Points:</strong> <span id="points"></span></p>
+
+  <p>
+    <strong>Badge:</strong>
+    <span id="badgeBox"></span>
+  </p>
+
+  <input type="file" id="profileInput">
+  <!-- ✅ FIX -->
+  <button type="button" onclick="uploadProfile()">Update Profile</button>
+</div>
+
+<!-- REPORT FOUND ITEM -->
+<section class="card">
+  <h3>Report Found Item</h3>
+
+  <input type="text" id="itemName" placeholder="Item name (e.g Mobile)">
+  <textarea id="itemDesc" placeholder="Item description"></textarea>
+
+  <!-- ✅ Hidden location -->
+  <input type="hidden" id="itemLocation" name="location">
+
+  <!-- ✅ Map -->
+  <div id="map" style="height:300px;border-radius:10px;"></div>
+
+  <p id="locationText" style="color:#ffd700;">
+    Click on map to select location
+  </p>
+
+  <input type="file" id="itemImage" accept="image/*">
+
+  <button id="foundSubmitBtn" onclick="submitFoundItem()" disabled>
+    Submit Found Item
+  </button>
+
+  <p class="status" id="msg"></p>
+</section>
+
+<!-- MY FOUND ITEMS -->
+<section class="card">
+  <h3>My Found Items</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Location</th>
+        <th>Status</th>
+        <th>Chat</th>
+      </tr>
+    </thead>
+    <tbody id="myFoundItems"></tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h3>🔔 Notifications</h3>
+  <ul id="notifications"></ul>
+</section>
+
+<!-- ✅ Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ================= AUTH GUARD =================
+const role = localStorage.getItem("role");
+const userId = localStorage.getItem("user_id");
+
+if (!role || role !== "finder") {
+  window.location.replace("../auth/login.html");
+}
+
+// ================= ELEMENTS =================
+const itemName = document.getElementById("itemName");
+const itemDesc = document.getElementById("itemDesc");
+const foundSubmitBtn = document.getElementById("foundSubmitBtn");
+
+// ================= PROFILE =================
+const badgeBox = document.getElementById("badgeBox");
+const pointsElement = document.getElementById("points");
+
+async function loadFinderDashboard() {
+  try {
+    const res = await fetch(`http://127.0.0.1:5000/finder-dashboard`, {
+      method: "GET",
+      headers: {
+    "Authorization": "Bearer " + localStorage.getItem("token")
+  }
+});
+
+    const data = await res.json();
+
+    document.getElementById("finderName").innerText = data.name;
+    pointsElement.innerText = data.total_points || 0;
+
+    let badgeHTML = "";
+
+    if (data.badge === "gold") {
+      badgeHTML = "🥇 Gold Badge";
+      badgeBox.style.color = "#FFD700";
+    }
+    else if (data.badge === "silver") {
+      badgeHTML = "🥈 Silver Badge";
+      badgeBox.style.color = "#C0C0C0";
+    }
+    else if (data.badge === "bronze") {
+      badgeHTML = "🥉 Bronze Badge";
+      badgeBox.style.color = "#CD7F32";
+    }
+    else {
+      badgeHTML = "No Badge Yet";
+      badgeBox.style.color = "gray";
+    }
+
+    badgeBox.innerText = badgeHTML;
+
+    document.getElementById("dashboardTitle").innerText =
+      "Finder Dashboard - " + data.name;
+
+    if (data.profile_image) {
+      document.getElementById("profileImage").src =
+        "http://127.0.0.1:5000/static/profile_pics/" + data.profile_image;
+    } else {
+      document.getElementById("profileImage").src =
+        "https://via.placeholder.com/120";
+    }
+
+  } catch (error) {
+    console.error("Dashboard Load Error:", error);
+  }
+}
+
+// ================= VALIDATION (NO LOCATION) =================
+function validateFoundForm() {
+  if (itemName.value.trim() && itemDesc.value.trim()) {
+    foundSubmitBtn.disabled = false;
+  } else {
+    foundSubmitBtn.disabled = true;
+  }
+}
+
+itemName.addEventListener("input", validateFoundForm);
+itemDesc.addEventListener("input", validateFoundForm);
+
+// ================= LOGOUT =================
+function logout() {
+  localStorage.clear();
+  window.location.replace("../auth/login.html");
+}
+
+// ================= SUBMIT =================
+async function submitFoundItem() {
+  const msg = document.getElementById("msg");
+
+  try {
+    const formData = new FormData();
+    formData.append("item_name", itemName.value.trim());
+    formData.append("description", itemDesc.value.trim());
+
+    // ✅ Location name
+    formData.append("location_name", window.locationName || "Unknown Location");
+
+    // ✅ Coordinates
+    const locationValue = document.getElementById("itemLocation").value;
+    formData.append("location", locationValue || "Not specified");
+
+    const imageFile = document.getElementById("itemImage").files[0];
+    if (imageFile) formData.append("image", imageFile);
+
+    const res = await fetch("http://127.0.0.1:5000/found-item", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + localStorage.getItem("token")
+  },
+  body: formData
+});
+
+    const data = await res.json();
+
+    msg.style.color = "#7CFC00";
+    msg.innerText = data.msg;
+
+    // ✅ Reset form
+    itemName.value = "";
+    itemDesc.value = "";
+    document.getElementById("itemLocation").value = "";
+    document.getElementById("itemImage").value = "";
+    window.locationName = "";   // 🔥 IMPORTANT
+    foundSubmitBtn.disabled = true;
+
+    loadMyFoundItems();
+
+  } catch {
+    msg.style.color = "red";
+    msg.innerText = "Server not responding";
+  }
+}
+
+
+// ================= LOAD ITEMS =================
+async function loadMyFoundItems() {
+  const res = await fetch("http://127.0.0.1:5000/my-found-items", {
+    headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+    }
+  });
+
+  const items = await res.json();
+
+  const tbody = document.getElementById("myFoundItems");
+  tbody.innerHTML = "";
+
+  if (items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4">No found items reported yet</td></tr>`;
+    return;
+  }
+
+  items.forEach(item => {
+    let chatCol = "—";
+
+    if (item.is_matched && item.chat_approved) {
+      chatCol = `<button onclick="openChat(${item.matched_lost_item_id})">Open Chat</button>`;
+    } 
+    else if (item.is_matched) {
+      chatCol = `<span class="pending">Completed</span>`;
+    }
+
+    tbody.innerHTML += `
+      <tr>
+        <td>${item.item_name}</td>
+        <td>📍 ${item.location_name || item.location}</td>
+        <td class="${item.is_matched ? "matched" : "pending"}">
+          ${item.is_matched ? "Matched ✅" : "Pending ⏳"}
+        </td>
+        <td>${chatCol}</td>
+      </tr>`;
+  });
+}
+
+function openChat(id) {
+  window.location.href = `chat.html?lost_item_id=${id}`;
+}
+
+// ================= NOTIFICATIONS =================
+async function loadNotifications() {
+  const res = await fetch(`http://127.0.0.1:5000/notifications`, {
+  headers: {
+    "Authorization": "Bearer " + localStorage.getItem("token")
+  }
+});
+
+  const notes = await res.json();
+
+  const ul = document.getElementById("notifications");
+  ul.innerHTML = notes.length
+    ? notes.map(n => `<li>${n.message}</li>`).join("")
+    : "<li>No notifications</li>";
+}
+
+// ================= PROFILE UPLOAD =================
+async function uploadProfile() {
+  const fileInput = document.getElementById("profileInput");
+
+  if (!fileInput.files[0]) {
+    alert("Please select image first");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("image", fileInput.files[0]);
+
+  await fetch(`http://127.0.0.1:5000/upload-profile`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer " + localStorage.getItem("token")
+  },
+  body: formData
+});
+  alert("Profile Updated");
+  loadFinderDashboard();
+}
+
+// ================= MAP =================
+var map = L.map('map').setView([33.6844, 73.0479], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
+
+var marker;
+
+map.on('click', function(e){
+
+  const lat = e.latlng.lat;
+  const lng = e.latlng.lng;
+
+  // Marker
+  if(marker){
+    map.removeLayer(marker);
+  }
+
+  marker = L.marker([lat, lng]).addTo(map);
+
+  // Save coordinates
+  document.getElementById("itemLocation").value =
+    lat + "," + lng;
+
+  // 🔥 Get Location Name (Reverse Geocoding)
+  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+  .then(res => res.json())
+  .then(data => {
+
+    const locationName = data.display_name;
+
+    // Show to user
+    document.getElementById("locationText").innerText =
+      "📍 " + locationName;
+
+    // Optional: store name separately
+    window.locationName = locationName;
+
+  })
+  .catch(() => {
+    document.getElementById("locationText").innerText =
+      "📍 Location selected (name not found)";
+  });
+
+});
+
+// ================= INIT =================
+loadFinderDashboard();
+loadMyFoundItems();
+loadNotifications();
+</script>
+
+</body>
+</html>

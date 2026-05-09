@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Secure Chat | Lost & Found</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #0a0a0a, #222);
+  font-family: Poppins, sans-serif;
+  color: white;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+body.loaded { opacity: 1; }
+body.fade-out { opacity: 0; }
+
+.chat-container {
+  width: 100%;
+  max-width: 420px;
+  height: 90vh;
+  background: #111;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 25px rgba(255,215,0,0.2);
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 15px;
+  background: #000;
+  border-bottom: 1px solid #333;
+  text-align: center;
+  font-weight: bold;
+  color: #ffd700;
+  position: relative;
+}
+
+.back-btn {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  background: linear-gradient(45deg, #ffd700, #ffcc00);
+  border: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+.back-btn:hover { transform: translateX(-4px) scale(1.05); }
+
+.chat-messages {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0f0f0f, #181818);
+}
+
+.msg {
+  max-width: 75%;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.msg img {
+  max-width: 100%;
+  border-radius: 10px;
+  margin-top: 5px;
+}
+
+.time {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 5px;
+}
+
+.me {
+  background: #ffd700;
+  color: black;
+  margin-left: auto;
+  border-bottom-right-radius: 4px;
+}
+
+.other {
+  background: #2b2b2b;
+  color: white;
+  margin-right: auto;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-input {
+  display: flex;
+  padding: 12px;
+  background: #000;
+  border-top: 1px solid #333;
+  align-items: center;
+}
+
+.chat-input input[type="text"] {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: none;
+  outline: none;
+  background: #1c1c1c;
+  color: white;
+  font-size: 14px;
+}
+
+.chat-input button {
+  margin-left: 8px;
+  background: #ffd700;
+  border: none;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+}
+
+.chat-input input[type="file"] { display: none; }
+.upload-btn { background: #333; color: white; }
+</style>
+</head>
+
+<body>
+
+<div class="chat-container">
+  <div class="chat-header">
+    <button class="back-btn" onclick="goBack()">⬅</button>
+    <div>
+      🔒 Secure Chat
+      <div id="statusText" style="font-size:11px; color:#aaa;">Checking...</div>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="messages"></div>
+
+  <div class="chat-input">
+    <input type="file" id="imageInput" accept="image/*">
+    <button class="upload-btn" onclick="document.getElementById('imageInput').click()">📷</button>
+    <input type="text" id="messageInput" placeholder="Type a message..." />
+    <button onclick="sendMessage()">➤</button>
+  </div>
+</div>
+
+<script>
+
+window.addEventListener("load", () => {
+  document.body.classList.add("loaded");
+});
+
+const userId = localStorage.getItem("user_id");
+const role = localStorage.getItem("role");
+
+const params = new URLSearchParams(window.location.search);
+const lostItemId = params.get("lost_item_id");
+
+const socket = io("http://127.0.0.1:5000", {
+  auth: {
+    token: localStorage.getItem("token")
+  }
+});
+
+
+const messagesDiv = document.getElementById("messages");
+const input = document.getElementById("messageInput");
+const imageInput = document.getElementById("imageInput");
+
+function goBack() {
+  document.body.classList.remove("loaded");
+  document.body.classList.add("fade-out");
+
+  setTimeout(() => {
+    if (role === "finder") window.location.href = "finder-dashboard.html";
+    else if (role === "loser") window.location.href = "loser-dashboard.html";
+    else window.location.href = "../auth/login.html";
+  }, 400);
+}
+
+function createMessageElement(data) {
+  const div = document.createElement("div");
+  const isMe = String(data.sender_id) === String(userId);
+
+  div.className = `msg ${isMe ? "me" : "other"}`;
+
+  if (data.message)
+    div.innerHTML += `<div>${data.message}</div>`;
+
+  if (data.image)
+    div.innerHTML += `<img src="http://127.0.0.1:5000${data.image}" />`;
+
+  if (isMe) {
+    let statusIcon = data.seen ? "✓✓" : "✓";
+    div.innerHTML += `<div class="time">${data.created_at} ${statusIcon}</div>`;
+  } else {
+    div.innerHTML += `<div class="time">${data.created_at}</div>`;
+  }
+
+  return div;
+}
+
+function addMessage(data) {
+  const div = createMessageElement(data);
+  messagesDiv.appendChild(div);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  setTimeout(() => {
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }, 50);
+}
+
+socket.on("connect", () => {
+  socket.emit("join_chat", {
+    lost_item_id: Number(lostItemId),
+    user_id: Number(userId)
+  });
+});
+
+socket.on("load_messages", messages => {
+  messagesDiv.innerHTML = "";
+  messages.forEach(msg => {
+    const div = createMessageElement(msg);
+    messagesDiv.appendChild(div);
+  });
+  scrollToBottom();
+});
+
+socket.on("receive_message", data => {
+  addMessage(data);
+});
+
+function sendMessage() {
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  socket.emit("send_message", {
+    lost_item_id: Number(lostItemId),
+    sender_id: Number(userId),
+    sender_role: role,
+    message: msg
+  });
+
+  input.value = "";
+}
+
+input.addEventListener("keydown", function(e) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+imageInput.addEventListener("change", function () {
+
+    const file = imageInput.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("lost_item_id", lostItemId); // 🔥 IMPORTANT
+
+    fetch("http://127.0.0.1:5000/upload_chat_image", {
+        method: "POST",
+        headers: {
+            "Authorization": "Bearer " + localStorage.getItem("token")
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+
+        if (data.image) {
+            socket.emit("send_message", {
+                lost_item_id: Number(lostItemId),
+                sender_id: Number(userId),
+                sender_role: role,
+                image: data.image
+            });
+        } else {
+            alert(data.msg || "Image upload failed");
+        }
+
+        imageInput.value = "";
+    })
+    .catch(() => {
+        alert("Image upload error");
+    });
+});
+
+socket.on("user_status", data => {
+  const statusText = document.getElementById("statusText");
+  if (data.online) {
+    statusText.innerText = "Online";
+    statusText.style.color = "#7CFC00";
+  } else {
+    statusText.innerText = "Offline";
+    statusText.style.color = "#aaa";
+  }
+});
+
+</script>
+</body>
+</html>

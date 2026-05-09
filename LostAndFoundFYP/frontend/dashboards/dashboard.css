@@ -1,0 +1,49 @@
+* {
+  font-family: Poppins, sans-serif;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #111;
+  color: #fff;
+  padding: 20px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+button {
+  background: #ffd700;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #ffcc00;
+}
+
+.card {
+  background: #1e1e1e;
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 20px;
+}
+
+input, textarea {
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid #444;
+  color: #fff;
+  border-radius: 8px;
+}

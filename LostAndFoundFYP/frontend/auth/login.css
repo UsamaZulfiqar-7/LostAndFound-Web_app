@@ -1,0 +1,154 @@
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  font-family:Poppins,sans-serif;
+}
+
+body{
+  height:100vh;
+  background:linear-gradient(135deg,#0a0a0a,#222);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+}
+
+.flip-container{
+  width:850px;
+  height:520px;
+  perspective:1000px;
+  position:relative;
+}
+
+.flipper{
+  position:absolute;
+  width:100%;
+  height:100%;
+  display:flex;
+  backface-visibility:hidden;
+  border-radius:20px;
+  overflow:hidden;
+  transition:transform .8s ease;
+}
+
+.front-side{ background:#111; }
+.back-side{ background:#1a1a1a; transform:rotateY(180deg); }
+
+.flip-container.flipped .front-side{ transform:rotateY(-180deg); }
+.flip-container.flipped .back-side{ transform:rotateY(0); }
+
+.left-box,.right-box{
+  width:50%;
+  padding:40px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+
+.text-box h2{ color:#ffd700; }
+.text-box p{ color:#bbb; margin-top:10px; }
+
+.form-box{ display:flex; flex-direction:column; gap:20px; }
+
+.input-box{ position:relative; }
+
+.input-box input,
+.input-box select{
+  width:100%;
+  padding:10px;
+  background:transparent;
+  border:none;
+  border-bottom:2px solid #555;
+  color:#fff;
+  outline:none;
+}
+
+/* ROLE SELECT SPECIAL */
+.input-box select{
+  color:#ffd700;
+  font-weight:600;
+}
+
+.input-box select:hover{
+  border-bottom:2px solid #ffcc00;
+  background:rgba(255,215,0,0.05);
+}
+
+.input-box option{
+  background:#111;
+  color:#ffd700;
+}
+
+.input-box label{
+  position:absolute;
+  left:0;
+  top:10px;
+  color:#aaa;
+  transition:.3s;
+}
+
+.input-box input:focus+label,
+.input-box input:valid+label{
+  top:-15px;
+  font-size:12px;
+  color:#ffd700;
+}
+
+.btn{
+  padding:10px;
+  border-radius:30px;
+  border:none;
+  background:#ffd700;
+  color:#000;
+  cursor:pointer;
+  font-weight:600;
+  transition:.3s;
+}
+
+.btn:hover{
+  transform:scale(1.05);
+  background:#ffcc00;
+}
+
+.small-btn{
+  background:none;
+  border:1px solid #ffd700;
+  color:#ffd700;
+}
+
+.small-btn:hover{
+  background:#ffd700;
+  color:#000;
+}
+
+.google-btn{
+  background:#fff;
+  color:#000;
+}
+/* 🔥 Google Button Styling Override */
+/* 🔥 Google Button Wrapper */
+.g_id_signin {
+  display: inline-block;
+  border: 1px solid #ffd700;
+  border-radius: 30px;
+  padding: 6px 12px;
+  background: transparent;
+  transition: 0.3s;
+}
+
+/* Hover effect SAME as small-btn */
+.g_id_signin:hover {
+  background: #ffd700;
+}
+
+/* iframe ko fit karna */
+.g_id_signin iframe {
+  border-radius: 30px !important;
+  filter: invert(1); /* makes it dark */
+}
+
+/* Hover pe invert remove (text black ho jaye feel aaye) */
+.g_id_signin:hover iframe {
+  filter: invert(0);
+}
