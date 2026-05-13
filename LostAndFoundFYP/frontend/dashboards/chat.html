@@ -170,151 +170,273 @@ const role = localStorage.getItem("role");
 const params = new URLSearchParams(window.location.search);
 const lostItemId = params.get("lost_item_id");
 
+const messagesDiv = document.getElementById("messages");
+const input = document.getElementById("messageInput");
+const imageInput = document.getElementById("imageInput");
+
+
+// ✅ SOCKET CREATE FIRST
 const socket = io("http://127.0.0.1:5000", {
+  transports: ["websocket", "polling"],
   auth: {
     token: localStorage.getItem("token")
   }
 });
 
 
-const messagesDiv = document.getElementById("messages");
-const input = document.getElementById("messageInput");
-const imageInput = document.getElementById("imageInput");
-
-function goBack() {
-  document.body.classList.remove("loaded");
-  document.body.classList.add("fade-out");
-
-  setTimeout(() => {
-    if (role === "finder") window.location.href = "finder-dashboard.html";
-    else if (role === "loser") window.location.href = "loser-dashboard.html";
-    else window.location.href = "../auth/login.html";
-  }, 400);
-}
-
-function createMessageElement(data) {
-  const div = document.createElement("div");
-  const isMe = String(data.sender_id) === String(userId);
-
-  div.className = `msg ${isMe ? "me" : "other"}`;
-
-  if (data.message)
-    div.innerHTML += `<div>${data.message}</div>`;
-
-  if (data.image)
-    div.innerHTML += `<img src="http://127.0.0.1:5000${data.image}" />`;
-
-  if (isMe) {
-    let statusIcon = data.seen ? "✓✓" : "✓";
-    div.innerHTML += `<div class="time">${data.created_at} ${statusIcon}</div>`;
-  } else {
-    div.innerHTML += `<div class="time">${data.created_at}</div>`;
-  }
-
-  return div;
-}
-
-function addMessage(data) {
-  const div = createMessageElement(data);
-  messagesDiv.appendChild(div);
-  scrollToBottom();
-}
-
-function scrollToBottom() {
-  setTimeout(() => {
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-  }, 50);
-}
-
+// ✅ CONNECT
 socket.on("connect", () => {
+
+  console.log("✅ SOCKET CONNECTED");
+
   socket.emit("join_chat", {
     lost_item_id: Number(lostItemId),
     user_id: Number(userId)
   });
+
 });
 
+
+// ✅ JOINED
+socket.on("joined", data => {
+  console.log("✅ JOINED ROOM:", data);
+});
+
+
+// ✅ LOAD OLD MESSAGES
 socket.on("load_messages", messages => {
+
   messagesDiv.innerHTML = "";
+
   messages.forEach(msg => {
-    const div = createMessageElement(msg);
-    messagesDiv.appendChild(div);
+    addMessage(msg);
   });
+
   scrollToBottom();
+
 });
 
+
+// ✅ RECEIVE NEW MESSAGE
 socket.on("receive_message", data => {
+
+  console.log("📩 MESSAGE RECEIVED:", data);
+
   addMessage(data);
+
 });
 
+
+// ✅ CREATE MESSAGE ELEMENT
+function createMessageElement(data) {
+
+  const div = document.createElement("div");
+
+  const isMe = String(data.sender_id) === String(userId);
+
+  div.className = `msg ${isMe ? "me" : "other"}`;
+
+  if (data.message) {
+    div.innerHTML += `<div>${data.message}</div>`;
+  }
+
+  if (data.image) {
+    div.innerHTML += `
+      <img 
+        src="http://127.0.0.1:5000${data.image}" 
+        style="max-width:200px;border-radius:10px;margin-top:5px;"
+      />
+    `;
+  }
+
+  let status = "";
+
+  if (isMe) {
+    status = data.seen ? "✓✓" : "✓";
+  }
+
+  div.innerHTML += `
+    <div class="time">
+      ${data.created_at || ""}
+      ${status}
+    </div>
+  `;
+
+  return div;
+}
+
+
+// ✅ ADD MESSAGE
+function addMessage(data) {
+
+  const div = createMessageElement(data);
+
+  messagesDiv.appendChild(div);
+
+  scrollToBottom();
+
+}
+
+
+// ✅ SCROLL
+function scrollToBottom() {
+
+  setTimeout(() => {
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }, 100);
+
+}
+
+
+// ✅ SEND MESSAGE
 function sendMessage() {
+
   const msg = input.value.trim();
+
   if (!msg) return;
 
   socket.emit("send_message", {
+
     lost_item_id: Number(lostItemId),
     sender_id: Number(userId),
     sender_role: role,
     message: msg
+
   });
 
   input.value = "";
+
 }
 
+
+// ✅ ENTER SEND
 input.addEventListener("keydown", function(e) {
+
   if (e.key === "Enter") {
+
     e.preventDefault();
+
     sendMessage();
+
   }
+
 });
 
+
+// ✅ IMAGE SEND
 imageInput.addEventListener("change", function () {
 
-    const file = imageInput.files[0];
-    if (!file) return;
+  const file = imageInput.files[0];
 
-    const formData = new FormData();
-    formData.append("image", file);
-    formData.append("lost_item_id", lostItemId); // 🔥 IMPORTANT
+  if (!file) return;
 
-    fetch("http://127.0.0.1:5000/upload_chat_image", {
-        method: "POST",
-        headers: {
-            "Authorization": "Bearer " + localStorage.getItem("token")
-        },
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
+  const formData = new FormData();
 
-        if (data.image) {
-            socket.emit("send_message", {
-                lost_item_id: Number(lostItemId),
-                sender_id: Number(userId),
-                sender_role: role,
-                image: data.image
-            });
-        } else {
-            alert(data.msg || "Image upload failed");
-        }
+  formData.append("image", file);
+  formData.append("lost_item_id", lostItemId);
 
-        imageInput.value = "";
-    })
-    .catch(() => {
-        alert("Image upload error");
-    });
+  fetch("http://127.0.0.1:5000/upload_chat_image", {
+
+    method: "POST",
+
+    headers: {
+      "Authorization": "Bearer " + localStorage.getItem("token")
+    },
+
+    body: formData
+
+  })
+
+  .then(res => res.json())
+
+  .then(data => {
+
+    console.log("IMAGE RESPONSE:", data);
+
+    if (data.image) {
+
+      socket.emit("send_message", {
+
+        lost_item_id: Number(lostItemId),
+        sender_id: Number(userId),
+        sender_role: role,
+        image: data.image
+
+      });
+
+    } else {
+
+      alert(data.msg || "Upload failed");
+
+    }
+
+    imageInput.value = "";
+
+  })
+
+  .catch(err => {
+
+    console.log(err);
+
+    alert("Upload error");
+
+  });
+
 });
 
+
+// ✅ ONLINE STATUS
 socket.on("user_status", data => {
+
   const statusText = document.getElementById("statusText");
+
+  if (!statusText) return;
+
   if (data.online) {
+
     statusText.innerText = "Online";
     statusText.style.color = "#7CFC00";
+
   } else {
+
     statusText.innerText = "Offline";
     statusText.style.color = "#aaa";
+
   }
+
 });
 
+
+// ✅ SOCKET ERRORS
+socket.on("connect_error", (err) => {
+
+  console.log("CONNECT ERROR:", err.message);
+
+});
+
+socket.on("error", (data) => {
+
+  console.log("SERVER ERROR:", data);
+
+});
+
+
+// ✅ BACK BUTTON
+function goBack() {
+  document.body.classList.add("fade-out");
+  setTimeout(() => {
+    const userRole = localStorage.getItem("role");
+    if (userRole === "finder") {
+      window.location.href = "finder-dashboard.html";
+    } else if (userRole === "admin") {
+      window.location.href = "admin-dashboard.html";
+    } else {
+      window.location.href = "loser-dashboard.html";
+    }
+  }, 400);
+}
+
 </script>
+
 </body>
 </html>

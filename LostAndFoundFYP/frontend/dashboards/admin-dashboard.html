@@ -637,14 +637,18 @@ async function loadReturnedItems() {
   }
 }
 async function initAdminDashboard() {
-  await Promise.all([
-    loadLostItems(),
-    loadFoundItems(),
-    loadChatRequests(),
-    loadReturnedItems(),
-    loadStats(),
-    loadLeaderboard()
-  ]);
+
+  // ✅ FIRST load lost items
+  await loadLostItems();
+
+  // ✅ THEN found items
+  await loadFoundItems();
+
+  // other sections
+  await loadChatRequests();
+  await loadReturnedItems();
+  await loadStats();
+  await loadLeaderboard();
 }
 
 initAdminDashboard();
