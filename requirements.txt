@@ -32,4 +32,5 @@ Pillow==11.3.0
 opencv-python==4.12.0.88
 qrcode==8.2
 PyJWT
-google-auth
+google-auth
+python-dotenv

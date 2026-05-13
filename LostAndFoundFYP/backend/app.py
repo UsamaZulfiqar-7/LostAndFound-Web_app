@@ -20,6 +20,11 @@ from extensions import db
 from models import User, LostItem, FoundItem, Reward, Notification, Message
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
+
 app = Flask(__name__, static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
@@ -134,7 +139,19 @@ online_users = set()
 
 
 # ================= CONFIG =================
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:@localhost/lostfound_db')
+db_url = os.getenv('DATABASE_URL') or os.getenv('MYSQL_URL')
+
+if not db_url and os.getenv('MYSQLHOST'):
+    # Construct from individual Railway variables
+    user = os.getenv('MYSQLUSER')
+    pw = os.getenv('MYSQLPASSWORD')
+    host = os.getenv('MYSQLHOST')
+    port = os.getenv('MYSQLPORT', '3306')
+    db_name = os.getenv('MYSQLDATABASE')
+    db_url = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{db_name}"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'mysql+pymysql://root:@localhost/lostfound_db'
+
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace("postgres://", "postgresql://", 1)
 
