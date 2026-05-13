@@ -1,90 +1,88 @@
+import os
+import time
 import jwt
+import qrcode
+import numpy as np
+from functools import wraps
 from datetime import datetime, timedelta
 
-import eventlet
-eventlet.monkey_patch()
-import numpy as np
+from flask import Flask, request, jsonify, redirect, url_for
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room
+from werkzeug.utils import secure_filename
+
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import Model
 from sklearn.metrics.pairwise import cosine_similarity
+
 from extensions import db
 from models import User, LostItem, FoundItem, Reward, Notification, Message
-import qrcode
-import os
-from flask import redirect, url_for
-
-from flask import Flask, request, jsonify
-from werkzeug.utils import secure_filename
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit, join_room
+from google.oauth2 import id_token
+from google.auth.transport import requests as grequests
 app = Flask(__name__, static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-app.config["SECRET_KEY"] = "sk_8f92kjsdf9234@#kjsdf9234kjsdf!"
-
-from flask import request, jsonify
-import requests
-
-GOOGLE_CLIENT_ID = "286841684345-d8v35mfp128cou6v0nu37eurd6b6uae1.apps.googleusercontent.com"
-
-from google.oauth2 import id_token
-from google.auth.transport import requests as grequests
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "sk_8f92kjsdf9234@#kjsdf9234kjsdf!")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "286841684345-d8v35mfp128cou6v0nu37eurd6b6uae1.apps.googleusercontent.com")
 
 @app.route("/google-login", methods=["POST"])
 def google_login():
-    data = request.json
-    token = data.get("token")
-    selected_role = data.get("role")  # 🔥 NEW
-
-    if not token:
-        return jsonify({"msg": "Token missing"}), 400
 
     try:
-        # 🔐 VERIFY GOOGLE TOKEN
+
+        data = request.get_json()
+
+        token = data.get("token")
+        selected_role = data.get("role")
+
+        if not token:
+            return jsonify({"msg": "Google token missing"}), 400
+
+        # VERIFY TOKEN
         idinfo = id_token.verify_oauth2_token(
             token,
             grequests.Request(),
             GOOGLE_CLIENT_ID
         )
 
-        email = idinfo["email"]
+        email = idinfo.get("email")
         name = idinfo.get("name", "Google User")
 
-        # 🔍 CHECK USER EXISTS
+        if not email:
+            return jsonify({"msg": "Google email missing"}), 400
+
+        # CHECK USER
         user = User.query.filter_by(email=email).first()
 
-        # =============================
-        # 👤 FIRST TIME LOGIN
-        # =============================
+        # ================= NEW USER =================
         if not user:
 
-            # ❌ ROLE NOT PROVIDED → ASK FRONTEND
             if not selected_role:
                 return jsonify({
-                    "msg": "Role required",
-                    "new_user": True
+                    "new_user": True,
+                    "msg": "Role required"
                 }), 200
 
-            # ✅ CREATE USER WITH SELECTED ROLE
             user = User(
                 name=name,
                 email=email,
                 role=selected_role
             )
+
             user.set_password("google_user")
 
             db.session.add(user)
             db.session.commit()
 
-        # =============================
-        # 🔐 GENERATE JWT
-        # =============================
+        # ================= JWT TOKEN =================
         jwt_token = jwt.encode({
             "user_id": user.id,
             "role": user.role,
             "exp": datetime.utcnow() + timedelta(hours=5)
-        }, app.config["SECRET_KEY"], algorithm="HS256")
+        },
+        app.config["SECRET_KEY"],
+        algorithm="HS256")
 
         return jsonify({
             "msg": "Google login successful",
@@ -93,12 +91,15 @@ def google_login():
             "role": user.role,
             "name": user.name,
             "new_user": False
-        })
+        }), 200
+
+    except ValueError as e:
+        print("GOOGLE TOKEN ERROR:", e)
+        return jsonify({"msg": "Invalid Google token"}), 401
 
     except Exception as e:
         print("GOOGLE LOGIN ERROR:", e)
-        return jsonify({"msg": "Invalid Google token"}), 401
-
+        return jsonify({"msg": "Server error"}), 500
 # ================= IMAGE UPLOAD CONFIG =================
 
 # Folder for Lost & Found item images
@@ -119,30 +120,45 @@ os.makedirs(PROFILE_UPLOAD_FOLDER, exist_ok=True)
 app.config["ITEM_UPLOAD_FOLDER"] = ITEM_UPLOAD_FOLDER
 app.config["CHAT_UPLOAD_FOLDER"] = CHAT_UPLOAD_FOLDER
 
-socketio = SocketIO(app, cors_allowed_origins="*")
-
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="eventlet" if os.getenv("PORT") else "threading",
+    manage_session=False,
+    logger=False,
+    engineio_logger=False
+)
 # ===== ONLINE USERS TRACK =====
 online_users = set()
 
 
 
 # ================= CONFIG =================
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/lostfound_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:@localhost/lostfound_db')
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
+    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace("postgres://", "postgresql://", 1)
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
-# ================= AI MODEL LOAD =================
-base_model = ResNet50(weights="imagenet")
+# ================= AI MODEL LAZY LOAD =================
+_ai_model = None
 
-model = Model(
-    inputs=base_model.input,
-    outputs=base_model.layers[-2].output
-)
+def get_ai_model():
+    global _ai_model
+    if _ai_model is None:
+        print("[INFO] Loading AI model...")
+        base_model = ResNet50(weights="imagenet")
+        _ai_model = Model(
+            inputs=base_model.input,
+            outputs=base_model.layers[-2].output
+        )
+    return _ai_model
 
 # ================= HOME =================
 @app.route("/")
 def home():
-    return "Backend is running successfully 🚀"
+    return "Backend is running successfully!"
 
 # ================= AUTH =================
 @app.route("/signup", methods=["POST"])
@@ -202,7 +218,6 @@ def login():
 
 
 # ================= TOKEN SECURITY =================
-from functools import wraps
 
 def token_required(f):
     @wraps(f)
@@ -267,18 +282,12 @@ def upload_profile(current_user):
     if file.filename == "":
         return jsonify({"msg": "No selected file"}), 400
 
-    from werkzeug.utils import secure_filename
-    import time
-
-    # 🔒 ALLOWED EXTENSIONS
     ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
     ext = file.filename.rsplit(".", 1)[-1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
         return jsonify({"msg": "Invalid file type"}), 400
 
-    # 🔒 SAFE FILENAME
-    import time
     filename = secure_filename(f"chat_{current_user.id}_{int(time.time())}.{ext}")
 
 
@@ -313,8 +322,7 @@ def report_lost_item(current_user):
     filename = None
 
     if image_file and image_file.filename != "":
-        from werkzeug.utils import secure_filename
-        import time
+
 
         # 🔒 FILE TYPE CHECK
         ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -353,7 +361,7 @@ def report_lost_item(current_user):
     qr_path = f"qr_codes/{qr_filename}"
     full_path = os.path.join("static", qr_path)
 
-    qr_url = f"http://127.0.0.1:5000/qr/{item.id}"
+    qr_url = f"{request.host_url.rstrip('/')}/qr/{item.id}"
     qr_img = qrcode.make(qr_url)
     qr_img.save(full_path)
 
@@ -372,12 +380,12 @@ def get_lost_items():
 
     lost_items = LostItem.query.filter(
         LostItem.status != "Returned"
-    ).all()
+    ).options(db.joinedload(LostItem.owner)).all()
 
     result = []
 
     for i in lost_items:
-        owner = User.query.get(i.owner_id)
+        owner = i.owner
 
         result.append({
             "id": i.id,
@@ -442,8 +450,7 @@ def report_found_item(current_user):
     filename = None
 
     if image_file and image_file.filename != "":
-        from werkzeug.utils import secure_filename
-        import time
+
 
         # 🔒 FILE TYPE CHECK
         ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
@@ -714,11 +721,11 @@ def match_item(current_user):
     db.session.add_all([
         Notification(
             user_id=lost_item.owner_id,
-            message=f"🎉 Your lost item '{lost_item.item_name}' has been matched!"
+            message=f"Your lost item '{lost_item.item_name}' has been matched!"
         ),
         Notification(
             user_id=found_item.finder_id,
-            message=f"✅ You successfully matched '{found_item.item_name}'"
+            message=f"You successfully matched '{found_item.item_name}'"
         )
     ])
 
@@ -795,7 +802,7 @@ def request_chat(current_user):
         # 🔔 notify admin (id=1)
         db.session.add(Notification(
             user_id=1,
-            message=f"💬 Chat request for lost item: {item.item_name}"
+            message=f"Chat request for lost item: {item.item_name}"
         ))
 
         db.session.commit()
@@ -837,7 +844,7 @@ def admin_approve_chat(current_user):
     # 🔔 notify owner
     db.session.add(Notification(
         user_id=item.owner_id,
-        message="💬 Chat approved by admin"
+        message="Chat approved by admin"
     ))
 
     found = FoundItem.query.filter_by(
@@ -848,7 +855,7 @@ def admin_approve_chat(current_user):
     if found:
         db.session.add(Notification(
             user_id=found.finder_id,
-            message="💬 Chat approved. You can now chat with owner"
+            message="Chat approved. You can now chat with owner"
         ))
 
     db.session.commit()
@@ -894,14 +901,18 @@ def admin_chat_requests(current_user):
 
 
 
+# ================= JOIN CHAT =================
+
 @socketio.on("join_chat")
 def handle_join(data):
+
+    print("JOIN REQUEST:", data)
 
     user_id = data.get("user_id")
     lost_item_id = data.get("lost_item_id")
 
     if not user_id or not lost_item_id:
-        emit("error", {"msg": "Invalid data"})
+        emit("error", {"msg": "Invalid join data"})
         return
 
     item = LostItem.query.get(lost_item_id)
@@ -910,28 +921,34 @@ def handle_join(data):
         emit("error", {"msg": "Item not found"})
         return
 
-    # 🔒 ONLY OWNER OR FINDER CAN JOIN
+    # ================= FIND MATCHED FINDER =================
+
     found = FoundItem.query.filter_by(
         matched_lost_item_id=item.id
     ).first()
 
+    # ================= SECURITY CHECK =================
+
     allowed = (
-        user_id == item.owner_id or
-        (found and user_id == found.finder_id)
+        int(user_id) == int(item.owner_id)
+        or
+        (found and int(user_id) == int(found.finder_id))
     )
 
     if not allowed:
         emit("error", {"msg": "Unauthorized"})
         return
 
+    # ================= JOIN ROOM =================
+
     room = f"chat_{lost_item_id}"
+
     join_room(room)
 
-    messages = Message.query.filter_by(
-        lost_item_id=lost_item_id
-    ).order_by(Message.created_at.asc()).all()
+    print(f"USER {user_id} JOINED ROOM {room}")
 
-    # mark seen
+    # ================= MARK SEEN =================
+
     Message.query.filter(
         Message.lost_item_id == lost_item_id,
         Message.sender_id != user_id,
@@ -940,79 +957,121 @@ def handle_join(data):
 
     db.session.commit()
 
+    # ================= LOAD CHAT HISTORY =================
+
+    messages = Message.query.filter_by(
+        lost_item_id=lost_item_id
+    ).order_by(Message.created_at.asc()).all()
+
     chat_history = []
 
     for msg in messages:
+
         chat_history.append({
+
+            "sender_id": msg.sender_id,
+            "sender_role": msg.sender_role,
             "message": msg.message,
             "image": msg.image,
-            "sender_id": msg.sender_id,
             "created_at": msg.created_at.strftime("%H:%M"),
             "seen": msg.seen
+
         })
 
     emit("load_messages", chat_history)
-    emit("joined")
+
+    emit("joined", {
+        "room": room
+    })
+
+
+# ================= SEND MESSAGE =================
 
 @socketio.on("send_message")
 def send_message(data):
 
-    user_id = data.get("sender_id")
-    lost_item_id = data.get("lost_item_id")
+    print("MESSAGE RECEIVED:", data)
 
-    if not user_id or not lost_item_id:
-        emit("error", {"msg": "Invalid message payload"})
-        return
+    try:
 
-    item = LostItem.query.get(lost_item_id)
+        user_id = data.get("sender_id")
+        lost_item_id = data.get("lost_item_id")
 
-    if not item or not item.chat_approved:
-        emit("error", {"msg": "Chat not approved"})
-        return
+        if not user_id or not lost_item_id:
+            emit("error", {"msg": "Invalid payload"})
+            return
 
-    # 🔒 ONLY OWNER OR FINDER CAN SEND
-    found = FoundItem.query.filter_by(
-        matched_lost_item_id=item.id
-    ).first()
+        item = LostItem.query.get(lost_item_id)
 
-    allowed = (
-        user_id == item.owner_id or
-        (found and user_id == found.finder_id)
-    )
+        if not item:
+            emit("error", {"msg": "Item not found"})
+            return
 
-    if not allowed:
-        emit("error", {"msg": "Unauthorized"})
-        return
+        # 🔒 CHAT APPROVED?
+        if not item.chat_approved:
+            emit("error", {"msg": "Chat not approved"})
+            return
 
-    room = f"chat_{lost_item_id}"
+        # 🔍 FIND MATCHED FINDER
+        found = FoundItem.query.filter_by(
+            matched_lost_item_id=item.id
+        ).first()
 
-    new_message = Message(
-        lost_item_id=lost_item_id,
-        sender_id=user_id,
-        sender_role=data.get("sender_role"),
-        message=data.get("message"),
-        image=data.get("image"),
-        seen=False
-    )
+        allowed = (
+            int(user_id) == int(item.owner_id)
+            or
+            (found and int(user_id) == int(found.finder_id))
+        )
 
-    db.session.add(new_message)
-    db.session.commit()
+        if not allowed:
+            emit("error", {"msg": "Unauthorized"})
+            return
 
-    socketio.emit("receive_message", {
-        "sender_id": user_id,
-        "sender_role": data.get("sender_role"),
-        "message": data.get("message"),
-        "image": data.get("image"),
-        "created_at": new_message.created_at.strftime("%H:%M"),
-        "seen": False
-    }, room=room)
+        # 💾 SAVE MESSAGE
+        new_message = Message(
+            lost_item_id=lost_item_id,
+            sender_id=user_id,
+            sender_role=data.get("sender_role"),
+            message=data.get("message"),
+            image=data.get("image"),
+            seen=False
+        )
 
+        db.session.add(new_message)
+        db.session.commit()
+
+        room = f"chat_{lost_item_id}"
+
+        response = {
+            "sender_id": new_message.sender_id,
+            "sender_role": new_message.sender_role,
+            "message": new_message.message,
+            "image": new_message.image,
+            "created_at": new_message.created_at.strftime("%H:%M"),
+            "seen": False
+        }
+
+        print("EMITTING TO:", room)
+
+    
+        socketio.emit(
+            "receive_message",
+            response,
+            room=room
+        )
+
+
+
+    except Exception as e:
+        print("SEND MESSAGE ERROR:", e)
+        emit("error", {"msg": str(e)})
+
+# ================= ADMIN CHAT MONITOR =================
 
 @app.route("/admin/chat-monitor/<int:lost_item_id>")
 @token_required
 def admin_chat_monitor(current_user, lost_item_id):
 
-    # 🔒 ADMIN ONLY
     if current_user.role != "admin":
         return jsonify({"msg": "Admin access only"}), 403
 
@@ -1021,16 +1080,21 @@ def admin_chat_monitor(current_user, lost_item_id):
     ).order_by(Message.created_at.asc()).all()
 
     return jsonify([
+
         {
             "sender": m.sender_role,
             "message": m.message,
             "image": m.image,
             "time": m.created_at.strftime("%Y-%m-%d %H:%M")
-        } for m in messages
+        }
+
+        for m in messages
+
     ])
 
 
 # ================= CHAT IMAGE UPLOAD =================
+
 @app.route("/upload_chat_image", methods=["POST"])
 @token_required
 def upload_chat_image(current_user):
@@ -1044,72 +1108,113 @@ def upload_chat_image(current_user):
     if not lost_item_id:
         return jsonify({"msg": "Lost item ID missing"}), 400
 
-    # 🔐 VALIDATE FILE TYPE
-    allowed_extensions = ["png", "jpg", "jpeg"]
+    # ================= FILE TYPE CHECK =================
+
+    allowed_extensions = ["png", "jpg", "jpeg", "webp"]
+
     ext = file.filename.split(".")[-1].lower()
 
     if ext not in allowed_extensions:
         return jsonify({"msg": "Invalid file type"}), 400
 
-    # 🔐 SECURE FILENAME
-    filename = secure_filename(f"chat_{current_user.id}_{file.filename}")
+    # ================= SAFE FILE NAME =================
 
-    filepath = os.path.join(app.config["CHAT_UPLOAD_FOLDER"], filename)
+
+    filename = secure_filename(
+        f"chat_{current_user.id}_{int(time.time())}.{ext}"
+    )
+
+    filepath = os.path.join(
+        app.config["CHAT_UPLOAD_FOLDER"],
+        filename
+    )
+
     file.save(filepath)
 
     image_path = f"/static/chat_images/{filename}"
 
-    # 🔐 USE current_user.id (NOT user input!)
-    new_msg = Message(
-        lost_item_id=lost_item_id,
-        sender_id=current_user.id,
-        sender_role=current_user.role,
-        image=image_path,
-        seen=False
-    )
-
-    db.session.add(new_msg)
-    db.session.commit()
+    # ================= RETURN ONLY =================
+    # NO DB SAVE HERE
+    # send_message socket will save message
 
     return jsonify({
+
         "image": image_path,
         "sender_id": current_user.id,
-        "created_at": new_msg.created_at.strftime("%H:%M"),
+        "created_at": datetime.now().strftime("%H:%M"),
         "seen": False
+
     })
+
+
+# ================= ONLINE USERS =================
+
 user_socket_map = {}
+
+
+# ================= SOCKET CONNECT =================
 
 @socketio.on("connect")
 def handle_connect(auth):
+
     try:
+
         token = auth.get("token")
-        data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+
+        if not token:
+            return False
+
+        data = jwt.decode(
+            token,
+            app.config["SECRET_KEY"],
+            algorithms=["HS256"]
+        )
+
         user_id = str(data["user_id"])
 
         online_users.add(user_id)
+
         user_socket_map[request.sid] = user_id
 
+        print(f"USER CONNECTED: {user_id}")
+
         socketio.emit("user_status", {
+
             "user_id": user_id,
             "online": True
+
         })
 
-    except:
+    except Exception as e:
+
+        print("SOCKET CONNECT ERROR:", e)
+
         return False
 
 
+# ================= SOCKET DISCONNECT =================
+
 @socketio.on("disconnect")
 def handle_disconnect():
+
     user_id = user_socket_map.get(request.sid)
 
     if user_id:
+
         online_users.discard(user_id)
+
         user_socket_map.pop(request.sid, None)
 
+        print(f"USER DISCONNECTED: {user_id}")
+
         socketio.emit("user_status", {
+
             "user_id": user_id,
             "online": False
+
         })
+
+
 
 
 
@@ -1152,12 +1257,12 @@ def mark_returned(current_user, item_id):
 
                 db.session.add(Notification(
                     user_id=finder.id,
-                    message=f"🎉 Item '{lost_item.item_name}' has been returned. You earned 50 points!"
+                    message=f"Item '{lost_item.item_name}' has been returned. You earned 50 points!"
                 ))
 
         db.session.add(Notification(
             user_id=lost_item.owner_id,
-            message=f"✅ You marked '{lost_item.item_name}' as successfully returned."
+            message=f"You marked '{lost_item.item_name}' as successfully returned."
         ))
 
         db.session.commit()
@@ -1184,6 +1289,7 @@ def extract_features(img_path):
     img_array = np.expand_dims(img_array, axis=0)
     img_array = preprocess_input(img_array)
 
+    model = get_ai_model()
     features = model.predict(img_array, verbose=0)
 
     return features.flatten()
@@ -1351,9 +1457,9 @@ def create_admin():
             db.session.add(admin)
             db.session.commit()
 
-            print("✅ Admin created successfully")
+            print("[SUCCESS] Admin created successfully")
         else:
-            print("ℹ️ Admin already exists")
+            print("[INFO] Admin already exists")
 
 
 create_admin()
@@ -1361,11 +1467,12 @@ create_admin()
 
 # ================= RUN APP =================
 if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
     socketio.run(
         app,
-        debug=True,   # 👉 DEV only (later change to False)
-        host="127.0.0.1",
-        port=5000
+        host="0.0.0.0",
+        port=port,
+        debug=os.getenv("FLASK_DEBUG", "False").lower() == "true",
+        allow_unsafe_werkzeug=True
     )
-
 

@@ -52,6 +52,10 @@ class LostItem(db.Model):
     chat_requested = db.Column(db.Boolean, default=False)
     chat_approved = db.Column(db.Boolean, default=False)
 
+    # Relationships
+    owner = db.relationship("User", backref="lost_items", lazy=True)
+    found_item = db.relationship("FoundItem", backref="lost_item", uselist=False, lazy=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -78,6 +82,9 @@ class FoundItem(db.Model):
     matched_lost_item_id = db.Column(db.Integer, db.ForeignKey("lost_item.id"))
 
     is_matched = db.Column(db.Boolean, default=False)
+
+    # Relationships
+    finder = db.relationship("User", backref="found_items", lazy=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

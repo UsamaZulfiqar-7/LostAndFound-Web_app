@@ -5,10 +5,19 @@ from tensorflow.keras.preprocessing import image
 from tensorflow.keras.models import Model
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Load pretrained ResNet50 without top layer
-base_model = ResNet50(weights="imagenet")
-model = Model(inputs=base_model.input,
-              outputs=base_model.layers[-2].output)  # 2048 feature vector
+# Pretrained model lazy loader
+_ai_model = None
+
+def get_ai_model():
+    global _ai_model
+    if _ai_model is None:
+        print("[INFO] Loading AI model in ai_model module...")
+        base_model = ResNet50(weights="imagenet")
+        _ai_model = Model(
+            inputs=base_model.input,
+            outputs=base_model.layers[-2].output
+        )
+    return _ai_model
 
 UPLOAD_FOLDER = "static/uploads"
 
@@ -18,6 +27,7 @@ def extract_features(img_path):
     img_array = np.expand_dims(img_array, axis=0)
     img_array = preprocess_input(img_array)
 
+    model = get_ai_model()
     features = model.predict(img_array, verbose=0)
     return features.flatten()
 
