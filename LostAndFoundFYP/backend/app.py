@@ -20,11 +20,6 @@ from extensions import db
 from models import User, LostItem, FoundItem, Reward, Notification, Message
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
-from dotenv import load_dotenv
-
-# Load .env file
-load_dotenv()
-
 app = Flask(__name__, static_folder="static")
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
@@ -84,7 +79,7 @@ def google_login():
         jwt_token = jwt.encode({
             "user_id": user.id,
             "role": user.role,
-            "exp": datetime.utcnow() + timedelta(hours=5)
+            "exp": datetime.utcnow() + timedelta(days=7)
         },
         app.config["SECRET_KEY"],
         algorithm="HS256")
@@ -150,6 +145,7 @@ if not db_url and os.getenv('MYSQLHOST'):
     db_name = os.getenv('MYSQLDATABASE')
     db_url = f"mysql+pymysql://{user}:{pw}@{host}:{port}/{db_name}"
 
+# If no cloud DB found, use local XAMPP default
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'mysql+pymysql://root:@localhost/lostfound_db'
 
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
@@ -222,7 +218,7 @@ def login():
     token = jwt.encode({
         "user_id": user.id,
         "role": user.role,
-        "exp": datetime.utcnow() + timedelta(hours=2)
+        "exp": datetime.utcnow() + timedelta(days=7)
     }, app.config["SECRET_KEY"], algorithm="HS256")
 
     return jsonify({
@@ -1479,7 +1475,10 @@ def create_admin():
             print("[INFO] Admin already exists")
 
 
-create_admin()
+try:
+    create_admin()
+except Exception as e:
+    print(f"[WARNING] Admin creation skipped (DB might not be ready): {e}")
 
 
 # ================= RUN APP =================
